@@ -82,17 +82,39 @@ resource "aws_instance" "worker" {
 resource "template_file" "hosts" {
   depends_on = ["aws_instance.control"]
   filename = "hosts.tpl"
+  count = 5
 
   vars {
-    n1 = "${element(aws_instance.worker.*.private_ip, 1)}"
-    n2 = "${element(aws_instance.worker.*.private_ip, 2)}"
-    n3 = "${element(aws_instance.worker.*.private_ip, 3)}"
-    n4 = "${element(aws_instance.worker.*.private_ip, 4)}"
-    n5 = "${element(aws_instance.worker.*.private_ip, 5)}"
+    n1 = "${element(aws_instance.worker.*.private_ip, 0)}"
+    n2 = "${element(aws_instance.worker.*.private_ip, 1)}"
+    n3 = "${element(aws_instance.worker.*.private_ip, 2)}"
+    n4 = "${element(aws_instance.worker.*.private_ip, 3)}"
+    n5 = "${element(aws_instance.worker.*.private_ip, 4)}"
   }
 
   provisioner "remote-exec" {
-    inline = ["echo '${template_file.hosts.rendered}' | sudo tee -a /etc/hosts",
+    inline = ["echo '${self.rendered}' | sudo tee -a /etc/hosts",
+              "sudo hostname n${count.index + 1}"]
+
+    connection {
+      user = "admin"
+      timeout = "5m"
+      key_file = "control"
+      agent = false
+      host = "${element(aws_instance.worker.*.private_ip, count.index)}"
+
+      bastion_host = "${aws_instance.control.public_ip}"
+      bastion_user = "admin"
+      bastion_key_file = "${var.private_key_path}"
+    }
+  }
+}
+
+resource "null_resource" "control-hosts" {
+  depends_on = ["aws_instance.control", "template_file.hosts"]
+
+  provisioner "remote-exec" {
+    inline = ["echo '${template_file.hosts.0.rendered}' | sudo tee -a /etc/hosts",
               "ssh-keyscan -t rsa n1 >> ~/.ssh/known_hosts",
               "ssh-keyscan -t rsa n2 >> ~/.ssh/known_hosts",
               "ssh-keyscan -t rsa n3 >> ~/.ssh/known_hosts",
